@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #e5e7eb;
+}
+
+.font-sora { font-family: 'Sora', sans-serif; }
+
+.phone-shell {
+  width: 390px;
+  min-height: 844px;
+  background: white;
+  border-radius: 48px;
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.08),
+    0 32px 80px rgba(0,0,0,0.20),
+    0 8px 20px rgba(0,0,0,0.10);
+  display: flex;
+  flex-direction: column;
+}
+
+.scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-content::-webkit-scrollbar { display: none; }
+
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.ai-dot { animation: pulse-dot 1.8s infinite; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.toast { animation: toast-in 0.3s ease both; }
+
+.h-13 { height: 3.25rem; }
+.w-13 { width: 3.25rem; }
