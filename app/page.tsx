@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Profile, Transaction, Category, SavingsGoal } from '@/lib/supabase'
 import type { User } from '@supabase/supabase-js'
@@ -18,6 +18,124 @@ function fmtShort(n: number) {
 
 const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
+// ---- Swipeable Transaction Row ----
+function SwipeableTransactionRow({
+  t,
+  onDelete,
+  onRename,
+}: {
+  t: Transaction
+  onDelete: (id: string) => void
+  onRename: (id: string, currentTitle: string) => void
+}) {
+  const SWIPE_THRESHOLD = 80
+  const startXRef = useRef<number | null>(null)
+  const currentXRef = useRef(0)
+  const [offset, setOffset] = useState(0)
+  const [revealed, setRevealed] = useState(false)
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    startXRef.current = e.clientX
+    currentXRef.current = offset
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (startXRef.current === null) return
+    const delta = e.clientX - startXRef.current
+    const base = revealed ? -SWIPE_THRESHOLD : 0
+    const newOffset = Math.min(0, Math.max(-SWIPE_THRESHOLD * 1.1, base + delta))
+    setOffset(newOffset)
+  }
+
+  const handlePointerUp = () => {
+    if (startXRef.current === null) return
+    startXRef.current = null
+    if (offset < -SWIPE_THRESHOLD / 2) {
+      setOffset(-SWIPE_THRESHOLD)
+      setRevealed(true)
+    } else {
+      setOffset(0)
+      setRevealed(false)
+    }
+  }
+
+  const close = () => { setOffset(0); setRevealed(false) }
+
+  return (
+    <div style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #f9fafb' }}>
+      {/* Action buttons behind */}
+      <div style={{
+        position: 'absolute', right: 0, top: 0, bottom: 0,
+        display: 'flex', alignItems: 'stretch', width: SWIPE_THRESHOLD,
+      }}>
+        <button
+          onClick={() => { close(); onRename(t.id, t.title) }}
+          style={{
+            flex: 1, border: 'none', background: '#6b7280',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          title="Renomear"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
+        <button
+          onClick={() => { close(); onDelete(t.id) }}
+          style={{
+            flex: 1, border: 'none', background: '#ef4444',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          title="Apagar"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Swipeable row */}
+      <div
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        style={{
+          transform: `translateX(${offset}px)`,
+          transition: startXRef.current === null ? 'transform 0.25s ease' : 'none',
+          display: 'flex', alignItems: 'center', gap: 14,
+          padding: '14px 24px', background: 'white', touchAction: 'pan-y',
+          userSelect: 'none', cursor: 'grab',
+        }}
+      >
+        <div style={{
+          width: 44, height: 44, borderRadius: 14,
+          background: t.type === 'income' ? '#f0fdf4' : '#fef9c3',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 20, flexShrink: 0, pointerEvents: 'none',
+        }}>
+          {t.categories?.emoji || (t.type === 'income' ? '💰' : '💸')}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+            {t.categories?.name || (t.type === 'income' ? 'Receita' : 'Outro')} • {new Date(t.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+          </div>
+        </div>
+        <div className="font-sora" style={{ fontSize: 15, fontWeight: 700, color: t.type === 'income' ? '#22c55e' : '#ef4444', flexShrink: 0, pointerEvents: 'none' }}>
+          {t.type === 'income' ? '+' : '-'}{fmt(t.amount)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
   const [user, setUser] = useState<User | null>(null)
@@ -33,19 +151,20 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [toast, setToast] = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'>('expense')
+  const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'|'rename'>('expense')
   const [activeMonth, setActiveMonth] = useState<ActiveMonth>(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
   })
-  // Add form state
   const [addTitle, setAddTitle] = useState('')
   const [addAmount, setAddAmount] = useState('')
   const [addCategory, setAddCategory] = useState('')
   const [addDate, setAddDate] = useState(new Date().toISOString().split('T')[0])
-  // Salary form
   const [salaryInput, setSalaryInput] = useState('')
   const [extraInput, setExtraInput] = useState('')
+  // rename state
+  const [renameId, setRenameId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -83,13 +202,11 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [loadData])
 
-  // Computed from transactions for active month
   const monthTxns = transactions.filter(t => t.date.startsWith(activeMonth))
   const monthIncome = monthTxns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
   const monthExpense = monthTxns.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
   const balance = monthIncome - monthExpense
 
-  // Category spending
   const catSpend: Record<string, number> = {}
   monthTxns.filter(t => t.type === 'expense').forEach(t => {
     if (t.category_id) catSpend[t.category_id] = (catSpend[t.category_id] || 0) + t.amount
@@ -102,18 +219,12 @@ export default function App() {
       if (authMode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         if (error) {
-          if (error.message.includes('Invalid login')) {
-            setAuthError('E-mail ou senha incorretos.')
-          } else {
-            setAuthError(error.message)
-          }
+          if (error.message.includes('Invalid login')) setAuthError('E-mail ou senha incorretos.')
+          else setAuthError(error.message)
         }
       } else {
         if (!fullName.trim()) { setAuthError('Digite seu nome completo.'); setLoading(false); return }
-        const { error } = await supabase.auth.signUp({
-          email, password,
-          options: { data: { full_name: fullName } }
-        })
+        const { error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } })
         if (error) setAuthError(error.message)
         else showToast('Conta criada! Verifique seu e-mail.')
       }
@@ -129,16 +240,13 @@ export default function App() {
     if (!user || !addTitle || !addAmount) return
     setLoading(true)
     const { error } = await supabase.from('transactions').insert({
-      user_id: user.id,
-      title: addTitle,
-      amount: parseFloat(addAmount),
+      user_id: user.id, title: addTitle, amount: parseFloat(addAmount),
       type: modalType === 'expense' ? 'expense' : 'income',
-      category_id: addCategory || null,
-      date: addDate,
+      category_id: addCategory || null, date: addDate,
     })
     if (!error) {
       await loadData(user.id)
-      setShowModal(false); setAddTitle(''); setAddAmount(''); setAddCategory(''); 
+      setShowModal(false); setAddTitle(''); setAddAmount(''); setAddCategory('')
       showToast(`✓ ${modalType === 'expense' ? 'Gasto' : 'Receita'} registrado!`)
     }
     setLoading(false)
@@ -166,6 +274,34 @@ export default function App() {
     setLoading(false)
   }
 
+  async function handleDeleteTransaction(id: string) {
+    if (!user) return
+    const { error } = await supabase.from('transactions').delete().eq('id', id)
+    if (!error) {
+      setTransactions(prev => prev.filter(t => t.id !== id))
+      showToast('🗑 Transação removida!')
+    }
+  }
+
+  function handleOpenRename(id: string, currentTitle: string) {
+    setRenameId(id)
+    setRenameValue(currentTitle)
+    setModalType('rename')
+    setShowModal(true)
+  }
+
+  async function handleRenameTransaction() {
+    if (!user || !renameId || !renameValue.trim()) return
+    setLoading(true)
+    const { error } = await supabase.from('transactions').update({ title: renameValue.trim() }).eq('id', renameId)
+    if (!error) {
+      await loadData(user.id)
+      setShowModal(false); setRenameId(null); setRenameValue('')
+      showToast('✏️ Descrição atualizada!')
+    }
+    setLoading(false)
+  }
+
   const openModal = (type: typeof modalType) => {
     setModalType(type); setShowModal(true)
     setAddTitle(''); setAddAmount(''); setAddCategory('')
@@ -173,7 +309,6 @@ export default function App() {
     if (type === 'salary') { setSalaryInput(String(profile?.salary || '')); setExtraInput(String(profile?.extra_income || '')) }
   }
 
-  // Group transactions by date
   const txnGroups: Record<string, Transaction[]> = {}
   monthTxns.forEach(t => {
     if (!txnGroups[t.date]) txnGroups[t.date] = []
@@ -183,7 +318,6 @@ export default function App() {
   const catIncome = categories.filter(c => ['Salário','Freelance'].includes(c.name))
   const catExpense = categories.filter(c => !['Salário','Freelance'].includes(c.name))
 
-  // ---- RENDER ----
   return (
     <div className="flex justify-center items-start min-h-screen py-8">
       <div className="phone-shell">
@@ -199,7 +333,6 @@ export default function App() {
               <div style={{fontSize:15,color:'rgba(255,255,255,0.55)',marginBottom:48}}>Sua vida financeira, organizada.</div>
             </div>
             <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
-              {/* Toggle */}
               <div style={{display:'flex',marginBottom:28,background:'#f3f4f6',borderRadius:12,padding:4}}>
                 {(['login','signup'] as const).map(m => (
                   <button key={m} onClick={() => { setAuthMode(m); setAuthError('') }}
@@ -238,7 +371,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== MAIN APP (dashboard/expenses/budget/profile) ===== */}
+        {/* ===== MAIN APP ===== */}
         {screen !== 'login' && (
           <>
             {/* DASHBOARD */}
@@ -270,7 +403,6 @@ export default function App() {
                   </div>
                 </div>
                 <div className="scroll-content">
-                  {/* Quick Actions */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px 8px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Ações rápidas</div>
                   </div>
@@ -293,7 +425,6 @@ export default function App() {
                     ))}
                   </div>
 
-                  {/* AI Card */}
                   <div style={{padding:'16px 24px 4px'}}>
                     <div style={{background:'linear-gradient(135deg,#f0fdf4,#e0f2fe)',border:'1.5px solid #bbf7d0',borderRadius:20,padding:18}}>
                       <div style={{fontSize:11,fontWeight:700,color:'#059669',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:6,display:'flex',alignItems:'center',gap:6}}>
@@ -311,7 +442,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Recent Transactions */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px 12px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Últimas transações</div>
                     <div onClick={()=>setScreen('expenses')} style={{fontSize:13,fontWeight:600,color:'#10b981',cursor:'pointer'}}>Ver todas</div>
@@ -376,7 +506,7 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  {/* Bar chart by category */}
+                  {/* Bar chart */}
                   {Object.keys(catSpend).length > 0 && (
                     <>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 24px 12px'}}>
@@ -400,27 +530,32 @@ export default function App() {
                     </>
                   )}
                   {/* Add buttons */}
-                  <div style={{display:'flex',gap:10,padding:'8px 24px 16px'}}>
+                  <div style={{display:'flex',gap:10,padding:'8px 24px 8px'}}>
                     <button onClick={()=>openModal('expense')} style={{flex:1,height:44,borderRadius:14,border:'1.5px solid #e5e7eb',background:'white',color:'#374151',fontSize:14,fontWeight:600,cursor:'pointer'}}>+ Gasto</button>
                     <button onClick={()=>openModal('income')} style={{flex:1,height:44,borderRadius:14,border:'1.5px solid #10b981',background:'#f0fdf4',color:'#059669',fontSize:14,fontWeight:600,cursor:'pointer'}}>+ Receita</button>
                   </div>
-                  {/* Grouped transactions */}
+
+                  {/* Swipe hint */}
+                  {monthTxns.length > 0 && (
+                    <div style={{padding:'4px 24px 8px',display:'flex',alignItems:'center',gap:6}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+                      <span style={{fontSize:11,color:'#9ca3af'}}>Arraste para revelar ações</span>
+                    </div>
+                  )}
+
+                  {/* Grouped swipeable transactions */}
                   {Object.keys(txnGroups).sort((a,b)=>b.localeCompare(a)).map(date => (
                     <div key={date}>
                       <div style={{padding:'12px 24px 6px',fontSize:13,fontWeight:600,color:'#6b7280',background:'#f9fafb'}}>
                         {new Date(date+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}
                       </div>
                       {txnGroups[date].map(t => (
-                        <div key={t.id} style={{display:'flex',alignItems:'center',gap:14,padding:'14px 24px',borderBottom:'1px solid #f9fafb'}}>
-                          <div style={{width:44,height:44,borderRadius:14,background:t.type==='income'?'#f0fdf4':'#fef9c3',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>
-                            {t.categories?.emoji||(t.type==='income'?'💰':'💸')}
-                          </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:14,fontWeight:600,color:'#1f2937',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.title}</div>
-                            <div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{t.categories?.name||(t.type==='income'?'Receita':'Outro')}</div>
-                          </div>
-                          <div className="font-sora" style={{fontSize:15,fontWeight:700,color:t.type==='income'?'#22c55e':'#ef4444'}}>{t.type==='income'?'+':'-'}{fmt(t.amount)}</div>
-                        </div>
+                        <SwipeableTransactionRow
+                          key={t.id}
+                          t={t}
+                          onDelete={handleDeleteTransaction}
+                          onRename={handleOpenRename}
+                        />
                       ))}
                     </div>
                   ))}
@@ -450,7 +585,6 @@ export default function App() {
                   </div>
                 </div>
                 <div className="scroll-content">
-                  {/* Savings Goals */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px 12px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Metas de economia</div>
                     <div onClick={()=>openModal('goal')} style={{fontSize:13,fontWeight:600,color:'#10b981',cursor:'pointer'}}>+ Nova</div>
@@ -475,15 +609,13 @@ export default function App() {
                         <div style={{height:10,background:'#f3f4f6',borderRadius:5,overflow:'hidden',marginBottom:8}}>
                           <div style={{height:'100%',borderRadius:5,background:'linear-gradient(90deg,#10b981,#6ee7b7)',width:`${pct}%`}}/>
                         </div>
-                        <div style={{display:'flex',justifyContent:'space-between'}}>
+                        <div style={{display:'justify-content'}}>
                           <div style={{fontSize:12,color:'#9ca3af'}}>Faltam {fmt(g.target_amount - g.current_amount)}</div>
                           {g.deadline && <div style={{fontSize:12,color:'#9ca3af'}}>{new Date(g.deadline+'T00:00:00').toLocaleDateString('pt-BR',{month:'short',year:'numeric'})}</div>}
                         </div>
                       </div>
                     )
                   })}
-
-                  {/* Category budgets */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 24px 12px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Gastos por categoria</div>
                   </div>
@@ -565,7 +697,6 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                  {/* Monthly table */}
                   <div style={{padding:'20px 24px 0'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937',marginBottom:12}}>Histórico mensal</div>
                     <div style={{background:'white',border:'1.5px solid #e5e7eb',borderRadius:20,padding:16}}>
@@ -609,10 +740,26 @@ export default function App() {
                 <div style={{background:'white',width:'100%',borderRadius:'28px 28px 0 0',padding:'0 24px 40px',maxHeight:'85%',overflowY:'auto'}}>
                   <div style={{width:40,height:4,background:'#e5e7eb',borderRadius:4,margin:'16px auto 24px'}}/>
                   <div className="font-sora" style={{fontSize:20,fontWeight:700,color:'#111827',marginBottom:24}}>
-                    {modalType==='expense'?'Registrar gasto':modalType==='income'?'Registrar receita':modalType==='goal'?'Nova meta':'Atualizar salário'}
+                    {modalType==='expense'?'Registrar gasto':modalType==='income'?'Registrar receita':modalType==='goal'?'Nova meta':modalType==='rename'?'Renomear transação':'Atualizar salário'}
                   </div>
 
-                  {modalType === 'salary' ? (
+                  {modalType === 'rename' ? (
+                    <>
+                      <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nova descrição</div>
+                      <input
+                        value={renameValue}
+                        onChange={e=>setRenameValue(e.target.value)}
+                        placeholder="Ex: Almoço no restaurante"
+                        autoFocus
+                        style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}
+                      />
+                      <button onClick={handleRenameTransaction} disabled={loading||!renameValue.trim()}
+                        style={{width:'100%',height:54,background:'linear-gradient(135deg,#6b7280,#4b5563)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!renameValue.trim())?0.5:1}}>
+                        {loading?'Salvando...':'Salvar nome'}
+                      </button>
+                      <button onClick={()=>setShowModal(false)} style={{width:'100%',height:44,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:500,cursor:'pointer',marginTop:8}}>Cancelar</button>
+                    </>
+                  ) : modalType === 'salary' ? (
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Salário base (R$)</div>
                       <input type="number" value={salaryInput} onChange={e=>setSalaryInput(e.target.value)} placeholder="6500"
@@ -634,7 +781,6 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      {/* Categories */}
                       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
                         {(modalType==='income'?catIncome:catExpense).map(cat => (
                           <div key={cat.id} onClick={()=>setAddCategory(cat.id)}
@@ -644,7 +790,6 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      {/* Amount */}
                       <div style={{textAlign:'center',margin:'20px 0'}}>
                         <span style={{fontFamily:'Sora,sans-serif',fontSize:32,fontWeight:700,color:'#9ca3af'}}>R$</span>
                         <input type="number" value={addAmount} onChange={e=>setAddAmount(e.target.value)} placeholder="0,00" inputMode="decimal"
@@ -675,7 +820,7 @@ export default function App() {
 
         {/* TOAST */}
         {toast && (
-          <div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#1f2937',color:'white',padding:'12px 20px',borderRadius:20,fontSize:14,fontWeight:600,zIndex:200,whiteSpace:'nowrap',animation:'fade-in-up 0.3s ease'}}>
+          <div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#1f2937',color:'white',padding:'12px 20px',borderRadius:20,fontSize:14,fontWeight:600,zIndex:200,whiteSpace:'nowrap'}}>
             {toast}
           </div>
         )}
