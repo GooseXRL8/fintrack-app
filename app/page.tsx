@@ -149,6 +149,11 @@ export default function App() {
   const [password, setPassword] = useState('fintrack123')
   const [fullName, setFullName] = useState('')
   const [authError, setAuthError] = useState('')
+  // Forgot password state
+  const [forgotMode, setForgotMode] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSuccess, setForgotSuccess] = useState(false)
   const [toast, setToast] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'|'rename'>('expense')
@@ -229,6 +234,21 @@ export default function App() {
         else showToast('Conta criada! Verifique seu e-mail.')
       }
     } finally { setLoading(false) }
+  }
+
+  // ---- Forgot Password Handler ----
+  async function handleForgotPassword() {
+    if (!forgotEmail.trim()) return
+    setForgotLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+      redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined,
+    })
+    setForgotLoading(false)
+    if (error) {
+      showToast('Erro ao enviar e-mail. Tente novamente.')
+    } else {
+      setForgotSuccess(true)
+    }
   }
 
   async function handleSignOut() {
@@ -332,42 +352,117 @@ export default function App() {
               <div className="font-sora" style={{fontSize:32,fontWeight:700,color:'white',lineHeight:1.1,marginBottom:8}}>Controle<br/>Financeiro</div>
               <div style={{fontSize:15,color:'rgba(255,255,255,0.55)',marginBottom:48}}>Sua vida financeira, organizada.</div>
             </div>
-            <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
-              <div style={{display:'flex',marginBottom:28,background:'#f3f4f6',borderRadius:12,padding:4}}>
-                {(['login','signup'] as const).map(m => (
-                  <button key={m} onClick={() => { setAuthMode(m); setAuthError('') }}
-                    style={{flex:1,height:38,border:'none',borderRadius:9,fontSize:14,fontWeight:authMode===m?600:500,
-                      color:authMode===m?'#111827':'#6b7280',
-                      background:authMode===m?'white':'transparent',cursor:'pointer',
-                      boxShadow:authMode===m?'0 2px 8px rgba(0,0,0,0.1)':'none'}}>
-                    {m === 'login' ? 'Entrar' : 'Cadastrar'}
-                  </button>
-                ))}
+
+            {/* ===== FORGOT PASSWORD PANEL ===== */}
+            {forgotMode ? (
+              <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
+                <button
+                  onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
+                  style={{display:'flex',alignItems:'center',gap:6,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:24,padding:0}}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 12H5M12 5l-7 7 7 7"/>
+                  </svg>
+                  Voltar ao login
+                </button>
+
+                {forgotSuccess ? (
+                  <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+                    <div style={{width:64,height:64,background:'#f0fdf4',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px'}}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                    </div>
+                    <div className="font-sora" style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:10}}>E-mail enviado!</div>
+                    <div style={{fontSize:14,color:'#6b7280',lineHeight:1.6,marginBottom:28}}>
+                      Enviamos um link de redefinição para<br/>
+                      <strong style={{color:'#111827'}}>{forgotEmail}</strong>.<br/>
+                      Verifique sua caixa de entrada e a pasta de spam.
+                    </div>
+                    <button
+                      onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
+                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer'}}
+                    >
+                      Voltar ao login
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-sora" style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:8}}>Esqueci a senha</div>
+                    <div style={{fontSize:14,color:'#6b7280',marginBottom:28,lineHeight:1.5}}>
+                      Digite o e-mail da sua conta e enviaremos um link para redefinir sua senha.
+                    </div>
+                    <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>E-mail</div>
+                    <input
+                      type="email"
+                      value={forgotEmail}
+                      onChange={e => setForgotEmail(e.target.value)}
+                      placeholder="seu@email.com"
+                      onKeyDown={e => { if (e.key === 'Enter') handleForgotPassword() }}
+                      style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}
+                    />
+                    <button
+                      onClick={handleForgotPassword}
+                      disabled={forgotLoading || !forgotEmail.trim()}
+                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!forgotEmail.trim()||forgotLoading)?0.6:1}}
+                    >
+                      {forgotLoading ? 'Enviando...' : 'Enviar link de redefinição'}
+                    </button>
+                  </>
+                )}
               </div>
-              {authMode === 'signup' && (
-                <>
-                  <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nome completo</div>
-                  <input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Carlos Mendes"
-                    style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
-                </>
-              )}
-              <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>E-mail</div>
-              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com"
-                style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
-              <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Senha</div>
-              <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
-                style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
-              {authError && <div style={{color:'#ef4444',fontSize:13,marginBottom:12,textAlign:'center'}}>{authError}</div>}
-              <button onClick={handleAuth} disabled={loading}
-                style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:loading?0.7:1}}>
-                {loading ? 'Aguarde...' : authMode === 'login' ? 'Entrar na conta' : 'Criar conta grátis'}
-              </button>
-              {authMode === 'login' && (
-                <div style={{textAlign:'center',marginTop:16,fontSize:13,color:'#9ca3af'}}>
-                  Demo: <span style={{color:'#10b981',fontWeight:600,cursor:'pointer'}} onClick={()=>{setEmail('demo@fintrack.app');setPassword('fintrack123')}}>usar dados de exemplo →</span>
+            ) : (
+              /* ===== NORMAL LOGIN/SIGNUP PANEL ===== */
+              <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
+                <div style={{display:'flex',marginBottom:28,background:'#f3f4f6',borderRadius:12,padding:4}}>
+                  {(['login','signup'] as const).map(m => (
+                    <button key={m} onClick={() => { setAuthMode(m); setAuthError('') }}
+                      style={{flex:1,height:38,border:'none',borderRadius:9,fontSize:14,fontWeight:authMode===m?600:500,
+                        color:authMode===m?'#111827':'#6b7280',
+                        background:authMode===m?'white':'transparent',cursor:'pointer',
+                        boxShadow:authMode===m?'0 2px 8px rgba(0,0,0,0.1)':'none'}}>
+                      {m === 'login' ? 'Entrar' : 'Cadastrar'}
+                    </button>
+                  ))}
                 </div>
-              )}
-            </div>
+                {authMode === 'signup' && (
+                  <>
+                    <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nome completo</div>
+                    <input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Carlos Mendes"
+                      style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
+                  </>
+                )}
+                <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>E-mail</div>
+                <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com"
+                  style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
+                <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Senha</div>
+                <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
+                  style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom: authMode === 'login' ? 8 : 20,outline:'none'}}/>
+
+                {/* ---- FORGOT PASSWORD LINK (login mode only) ---- */}
+                {authMode === 'login' && (
+                  <div style={{textAlign:'right',marginBottom:16}}>
+                    <button
+                      onClick={() => { setForgotMode(true); setForgotEmail(email); setForgotSuccess(false) }}
+                      style={{border:'none',background:'none',color:'#10b981',fontSize:13,fontWeight:600,cursor:'pointer',padding:0}}
+                    >
+                      Esqueci minha senha
+                    </button>
+                  </div>
+                )}
+
+                {authError && <div style={{color:'#ef4444',fontSize:13,marginBottom:12,textAlign:'center'}}>{authError}</div>}
+                <button onClick={handleAuth} disabled={loading}
+                  style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:loading?0.7:1}}>
+                  {loading ? 'Aguarde...' : authMode === 'login' ? 'Entrar na conta' : 'Criar conta grátis'}
+                </button>
+                {authMode === 'login' && (
+                  <div style={{textAlign:'center',marginTop:16,fontSize:13,color:'#9ca3af'}}>
+                    Demo: <span style={{color:'#10b981',fontWeight:600,cursor:'pointer'}} onClick={()=>{setEmail('demo@fintrack.app');setPassword('fintrack123')}}>usar dados de exemplo →</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
