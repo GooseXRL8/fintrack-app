@@ -63,18 +63,13 @@ function SwipeableTransactionRow({
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid #f9fafb' }}>
-      {/* Action buttons behind */}
       <div style={{
         position: 'absolute', right: 0, top: 0, bottom: 0,
         display: 'flex', alignItems: 'stretch', width: SWIPE_THRESHOLD,
       }}>
         <button
           onClick={() => { close(); onRename(t.id, t.title) }}
-          style={{
-            flex: 1, border: 'none', background: '#6b7280',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-          }}
+          style={{ flex: 1, border: 'none', background: '#6b7280', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           title="Renomear"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,11 +79,7 @@ function SwipeableTransactionRow({
         </button>
         <button
           onClick={() => { close(); onDelete(t.id) }}
-          style={{
-            flex: 1, border: 'none', background: '#ef4444',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-          }}
+          style={{ flex: 1, border: 'none', background: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           title="Apagar"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -100,7 +91,6 @@ function SwipeableTransactionRow({
         </button>
       </div>
 
-      {/* Swipeable row */}
       <div
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -114,12 +104,7 @@ function SwipeableTransactionRow({
           userSelect: 'none', cursor: 'grab',
         }}
       >
-        <div style={{
-          width: 44, height: 44, borderRadius: 14,
-          background: t.type === 'income' ? '#f0fdf4' : '#fef9c3',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 20, flexShrink: 0, pointerEvents: 'none',
-        }}>
+        <div style={{ width: 44, height: 44, borderRadius: 14, background: t.type === 'income' ? '#f0fdf4' : '#fef9c3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0, pointerEvents: 'none' }}>
           {t.categories?.emoji || (t.type === 'income' ? '💰' : '💸')}
         </div>
         <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none' }}>
@@ -149,11 +134,19 @@ export default function App() {
   const [password, setPassword] = useState('fintrack123')
   const [fullName, setFullName] = useState('')
   const [authError, setAuthError] = useState('')
-  // Forgot password state
+  // Forgot password
   const [forgotMode, setForgotMode] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotSuccess, setForgotSuccess] = useState(false)
+  // Reset password (from email link — PASSWORD_RECOVERY event)
+  const [resetMode, setResetMode] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetSuccess, setResetSuccess] = useState(false)
+
   const [toast, setToast] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'|'rename'>('expense')
@@ -167,7 +160,6 @@ export default function App() {
   const [addDate, setAddDate] = useState(new Date().toISOString().split('T')[0])
   const [salaryInput, setSalaryInput] = useState('')
   const [extraInput, setExtraInput] = useState('')
-  // rename state
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
@@ -197,15 +189,53 @@ export default function App() {
         setScreen('dashboard')
       }
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // ✅ Intercept password recovery — show reset form instead of entering the app
+      if (event === 'PASSWORD_RECOVERY') {
+        setUser(session?.user ?? null)
+        setResetMode(true)
+        return
+      }
+
       setUser(session?.user ?? null)
-      if (session?.user) {
+      if (session?.user && !resetMode) {
         loadData(session.user.id)
         setScreen('dashboard')
       }
     })
+
     return () => subscription.unsubscribe()
-  }, [loadData])
+  }, [loadData, resetMode])
+
+  async function handleResetPassword() {
+    setResetError('')
+    if (newPassword.length < 6) { setResetError('A senha deve ter pelo menos 6 caracteres.'); return }
+    if (newPassword !== confirmPassword) { setResetError('As senhas não coincidem.'); return }
+    setResetLoading(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setResetLoading(false)
+    if (error) {
+      setResetError('Erro ao atualizar a senha. Tente novamente.')
+    } else {
+      setResetSuccess(true)
+      setTimeout(async () => {
+        setResetMode(false)
+        setResetSuccess(false)
+        setNewPassword('')
+        setConfirmPassword('')
+        // User is already authenticated after password recovery, load their data
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          await loadData(session.user.id)
+          setUser(session.user)
+          setScreen('dashboard')
+        } else {
+          setScreen('login')
+        }
+      }, 2000)
+    }
+  }
 
   const monthTxns = transactions.filter(t => t.date.startsWith(activeMonth))
   const monthIncome = monthTxns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
@@ -236,19 +266,15 @@ export default function App() {
     } finally { setLoading(false) }
   }
 
-  // ---- Forgot Password Handler ----
   async function handleForgotPassword() {
     if (!forgotEmail.trim()) return
     setForgotLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-      redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined,
+      redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
     })
     setForgotLoading(false)
-    if (error) {
-      showToast('Erro ao enviar e-mail. Tente novamente.')
-    } else {
-      setForgotSuccess(true)
-    }
+    if (error) showToast('Erro ao enviar e-mail. Tente novamente.')
+    else setForgotSuccess(true)
   }
 
   async function handleSignOut() {
@@ -297,17 +323,11 @@ export default function App() {
   async function handleDeleteTransaction(id: string) {
     if (!user) return
     const { error } = await supabase.from('transactions').delete().eq('id', id)
-    if (!error) {
-      setTransactions(prev => prev.filter(t => t.id !== id))
-      showToast('🗑 Transação removida!')
-    }
+    if (!error) { setTransactions(prev => prev.filter(t => t.id !== id)); showToast('🗑 Transação removida!') }
   }
 
   function handleOpenRename(id: string, currentTitle: string) {
-    setRenameId(id)
-    setRenameValue(currentTitle)
-    setModalType('rename')
-    setShowModal(true)
+    setRenameId(id); setRenameValue(currentTitle); setModalType('rename'); setShowModal(true)
   }
 
   async function handleRenameTransaction() {
@@ -315,8 +335,7 @@ export default function App() {
     setLoading(true)
     const { error } = await supabase.from('transactions').update({ title: renameValue.trim() }).eq('id', renameId)
     if (!error) {
-      await loadData(user.id)
-      setShowModal(false); setRenameId(null); setRenameValue('')
+      await loadData(user.id); setShowModal(false); setRenameId(null); setRenameValue('')
       showToast('✏️ Descrição atualizada!')
     }
     setLoading(false)
@@ -342,8 +361,72 @@ export default function App() {
     <div className="flex justify-center items-start min-h-screen py-8">
       <div className="phone-shell">
 
+        {/* ===== RESET PASSWORD SCREEN (triggered by PASSWORD_RECOVERY event) ===== */}
+        {resetMode && (
+          <div className="flex flex-col h-full" style={{background:'linear-gradient(160deg,#0f172a 0%,#1e3a5f 50%,#064e3b 100%)'}}>
+            <div style={{padding:'60px 32px 0',flex:1,display:'flex',flexDirection:'column'}}>
+              <div style={{width:56,height:56,background:'#10b981',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:32}}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+              <div className="font-sora" style={{fontSize:32,fontWeight:700,color:'white',lineHeight:1.1,marginBottom:8}}>Nova<br/>Senha</div>
+              <div style={{fontSize:15,color:'rgba(255,255,255,0.55)'}}>Crie uma senha segura para sua conta.</div>
+            </div>
+
+            <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
+              {resetSuccess ? (
+                <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+                  <div style={{width:64,height:64,background:'#f0fdf4',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px'}}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6L9 17l-5-5"/>
+                    </svg>
+                  </div>
+                  <div className="font-sora" style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:10}}>Senha alterada!</div>
+                  <div style={{fontSize:14,color:'#6b7280',lineHeight:1.6}}>Sua senha foi atualizada com sucesso.<br/>Entrando no app...</div>
+                </div>
+              ) : (
+                <>
+                  <div className="font-sora" style={{fontSize:22,fontWeight:700,color:'#111827',marginBottom:8}}>Redefinir senha</div>
+                  <div style={{fontSize:14,color:'#6b7280',marginBottom:28,lineHeight:1.5}}>Digite sua nova senha abaixo.</div>
+
+                  <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nova senha</div>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}
+                  />
+
+                  <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Confirmar nova senha</div>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Repita a senha"
+                    onKeyDown={e => e.key === 'Enter' && handleResetPassword()}
+                    style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}
+                  />
+
+                  {resetError && <div style={{color:'#ef4444',fontSize:13,marginBottom:16,textAlign:'center'}}>{resetError}</div>}
+
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={resetLoading || !newPassword || !confirmPassword}
+                    style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!newPassword||!confirmPassword||resetLoading)?0.5:1}}
+                  >
+                    {resetLoading ? 'Salvando...' : 'Salvar nova senha'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ===== LOGIN ===== */}
-        {screen === 'login' && (
+        {!resetMode && screen === 'login' && (
           <div className="flex flex-col h-full" style={{background:'linear-gradient(160deg,#0f172a 0%,#1e3a5f 50%,#064e3b 100%)'}}>
             <div style={{padding:'60px 32px 0',flex:1,display:'flex',flexDirection:'column'}}>
               <div style={{width:56,height:56,background:'#10b981',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:32}}>
@@ -353,13 +436,10 @@ export default function App() {
               <div style={{fontSize:15,color:'rgba(255,255,255,0.55)',marginBottom:48}}>Sua vida financeira, organizada.</div>
             </div>
 
-            {/* ===== FORGOT PASSWORD PANEL ===== */}
             {forgotMode ? (
               <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
-                <button
-                  onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
-                  style={{display:'flex',alignItems:'center',gap:6,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:24,padding:0}}
-                >
+                <button onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
+                  style={{display:'flex',alignItems:'center',gap:6,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:600,cursor:'pointer',marginBottom:24,padding:0}}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M19 12H5M12 5l-7 7 7 7"/>
                   </svg>
@@ -379,10 +459,8 @@ export default function App() {
                       <strong style={{color:'#111827'}}>{forgotEmail}</strong>.<br/>
                       Verifique sua caixa de entrada e a pasta de spam.
                     </div>
-                    <button
-                      onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
-                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer'}}
-                    >
+                    <button onClick={() => { setForgotMode(false); setForgotSuccess(false); setForgotEmail('') }}
+                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer'}}>
                       Voltar ao login
                     </button>
                   </div>
@@ -393,33 +471,23 @@ export default function App() {
                       Digite o e-mail da sua conta e enviaremos um link para redefinir sua senha.
                     </div>
                     <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>E-mail</div>
-                    <input
-                      type="email"
-                      value={forgotEmail}
-                      onChange={e => setForgotEmail(e.target.value)}
-                      placeholder="seu@email.com"
+                    <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder="seu@email.com"
                       onKeyDown={e => { if (e.key === 'Enter') handleForgotPassword() }}
-                      style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}
-                    />
-                    <button
-                      onClick={handleForgotPassword}
-                      disabled={forgotLoading || !forgotEmail.trim()}
-                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!forgotEmail.trim()||forgotLoading)?0.6:1}}
-                    >
+                      style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}/>
+                    <button onClick={handleForgotPassword} disabled={forgotLoading || !forgotEmail.trim()}
+                      style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!forgotEmail.trim()||forgotLoading)?0.6:1}}>
                       {forgotLoading ? 'Enviando...' : 'Enviar link de redefinição'}
                     </button>
                   </>
                 )}
               </div>
             ) : (
-              /* ===== NORMAL LOGIN/SIGNUP PANEL ===== */
               <div style={{background:'white',borderRadius:'28px 28px 0 0',padding:'32px 28px 40px'}}>
                 <div style={{display:'flex',marginBottom:28,background:'#f3f4f6',borderRadius:12,padding:4}}>
                   {(['login','signup'] as const).map(m => (
                     <button key={m} onClick={() => { setAuthMode(m); setAuthError('') }}
                       style={{flex:1,height:38,border:'none',borderRadius:9,fontSize:14,fontWeight:authMode===m?600:500,
-                        color:authMode===m?'#111827':'#6b7280',
-                        background:authMode===m?'white':'transparent',cursor:'pointer',
+                        color:authMode===m?'#111827':'#6b7280',background:authMode===m?'white':'transparent',cursor:'pointer',
                         boxShadow:authMode===m?'0 2px 8px rgba(0,0,0,0.1)':'none'}}>
                       {m === 'login' ? 'Entrar' : 'Cadastrar'}
                     </button>
@@ -437,15 +505,12 @@ export default function App() {
                   style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:20,outline:'none'}}/>
                 <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Senha</div>
                 <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
-                  style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom: authMode === 'login' ? 8 : 20,outline:'none'}}/>
+                  style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:authMode==='login'?8:20,outline:'none'}}/>
 
-                {/* ---- FORGOT PASSWORD LINK (login mode only) ---- */}
                 {authMode === 'login' && (
                   <div style={{textAlign:'right',marginBottom:16}}>
-                    <button
-                      onClick={() => { setForgotMode(true); setForgotEmail(email); setForgotSuccess(false) }}
-                      style={{border:'none',background:'none',color:'#10b981',fontSize:13,fontWeight:600,cursor:'pointer',padding:0}}
-                    >
+                    <button onClick={() => { setForgotMode(true); setForgotEmail(email); setForgotSuccess(false) }}
+                      style={{border:'none',background:'none',color:'#10b981',fontSize:13,fontWeight:600,cursor:'pointer',padding:0}}>
                       Esqueci minha senha
                     </button>
                   </div>
@@ -467,9 +532,8 @@ export default function App() {
         )}
 
         {/* ===== MAIN APP ===== */}
-        {screen !== 'login' && (
+        {!resetMode && screen !== 'login' && (
           <>
-            {/* DASHBOARD */}
             {screen === 'dashboard' && (
               <div className="flex flex-col h-full">
                 <div style={{background:'linear-gradient(160deg,#0f172a,#1e3a5f 60%,#065f46)',padding:'54px 24px 28px',flexShrink:0}}>
@@ -527,8 +591,8 @@ export default function App() {
                       </div>
                       <div style={{fontSize:14,color:'#374151',lineHeight:1.5}}>
                         {monthExpense > monthIncome*0.7
-                          ? <>Atenção! Você já gastou <strong>{Math.round((monthExpense/Math.max(monthIncome,1))*100)}%</strong> da sua renda este mês. Considere revisar seus orçamentos.</>
-                          : <>Ótimo controle! Você está gastando <strong>{Math.round((monthExpense/Math.max(monthIncome,1))*100)}%</strong> da sua renda. Continue assim!</>}
+                          ? <>Atenção! Você já gastou <strong>{Math.round((monthExpense/Math.max(monthIncome,1))*100)}%</strong> da sua renda este mês.</>
+                          : <>Ótimo controle! Você está gastando <strong>{Math.round((monthExpense/Math.max(monthIncome,1))*100)}%</strong> da sua renda.</>}
                       </div>
                       <div style={{marginTop:12,display:'flex',gap:8}}>
                         <button onClick={()=>setScreen('budget')} style={{padding:'8px 16px',borderRadius:20,border:'none',background:'#10b981',color:'white',fontSize:12,fontWeight:700,cursor:'pointer'}}>Ver orçamentos</button>
@@ -567,7 +631,6 @@ export default function App() {
               </div>
             )}
 
-            {/* EXPENSES */}
             {screen === 'expenses' && (
               <div className="flex flex-col h-full">
                 <div style={{background:'white',padding:'60px 24px 20px',borderBottom:'1px solid #f3f4f6',flexShrink:0}}>
@@ -580,8 +643,7 @@ export default function App() {
                       return (
                         <button key={m} onClick={()=>!isFuture&&setActiveMonth(my)}
                           style={{padding:'8px 16px',borderRadius:20,fontSize:13,fontWeight:600,whiteSpace:'nowrap',cursor:isFuture?'default':'pointer',border:'1.5px solid',
-                            borderColor:activeMonth===my?'#111827':'#e5e7eb',
-                            background:activeMonth===my?'#111827':'white',
+                            borderColor:activeMonth===my?'#111827':'#e5e7eb',background:activeMonth===my?'#111827':'white',
                             color:activeMonth===my?'white':isFuture?'#d1d5db':'#6b7280',opacity:isFuture?0.4:1}}>
                           {m}
                         </button>
@@ -590,7 +652,6 @@ export default function App() {
                   </div>
                 </div>
                 <div className="scroll-content">
-                  {/* Summary */}
                   <div style={{padding:'16px 24px'}}>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
                       {[{label:'Receitas',val:monthIncome,color:'#16a34a',bg:'#f0fdf4'},{label:'Gastos',val:monthExpense,color:'#dc2626',bg:'#fef2f2'},{label:'Sobra',val:balance,color:balance>=0?'#1d4ed8':'#dc2626',bg:'#eff6ff'}].map(s=>(
@@ -601,10 +662,9 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  {/* Bar chart */}
                   {Object.keys(catSpend).length > 0 && (
                     <>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 24px 12px'}}>
+                      <div style={{padding:'4px 24px 12px'}}>
                         <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Por categoria</div>
                       </div>
                       <div style={{padding:'0 24px 8px'}}>
@@ -624,46 +684,33 @@ export default function App() {
                       </div>
                     </>
                   )}
-                  {/* Add buttons */}
                   <div style={{display:'flex',gap:10,padding:'8px 24px 8px'}}>
                     <button onClick={()=>openModal('expense')} style={{flex:1,height:44,borderRadius:14,border:'1.5px solid #e5e7eb',background:'white',color:'#374151',fontSize:14,fontWeight:600,cursor:'pointer'}}>+ Gasto</button>
                     <button onClick={()=>openModal('income')} style={{flex:1,height:44,borderRadius:14,border:'1.5px solid #10b981',background:'#f0fdf4',color:'#059669',fontSize:14,fontWeight:600,cursor:'pointer'}}>+ Receita</button>
                   </div>
-
-                  {/* Swipe hint */}
                   {monthTxns.length > 0 && (
                     <div style={{padding:'4px 24px 8px',display:'flex',alignItems:'center',gap:6}}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
                       <span style={{fontSize:11,color:'#9ca3af'}}>Arraste para revelar ações</span>
                     </div>
                   )}
-
-                  {/* Grouped swipeable transactions */}
                   {Object.keys(txnGroups).sort((a,b)=>b.localeCompare(a)).map(date => (
                     <div key={date}>
                       <div style={{padding:'12px 24px 6px',fontSize:13,fontWeight:600,color:'#6b7280',background:'#f9fafb'}}>
                         {new Date(date+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}
                       </div>
                       {txnGroups[date].map(t => (
-                        <SwipeableTransactionRow
-                          key={t.id}
-                          t={t}
-                          onDelete={handleDeleteTransaction}
-                          onRename={handleOpenRename}
-                        />
+                        <SwipeableTransactionRow key={t.id} t={t} onDelete={handleDeleteTransaction} onRename={handleOpenRename}/>
                       ))}
                     </div>
                   ))}
-                  {monthTxns.length === 0 && (
-                    <div style={{textAlign:'center',padding:'48px 24px',color:'#9ca3af',fontSize:14}}>Nenhuma transação neste mês.</div>
-                  )}
+                  {monthTxns.length === 0 && <div style={{textAlign:'center',padding:'48px 24px',color:'#9ca3af',fontSize:14}}>Nenhuma transação neste mês.</div>}
                   <div style={{height:8}}/>
                 </div>
                 <BottomNav screen={screen} setScreen={setScreen}/>
               </div>
             )}
 
-            {/* BUDGET */}
             {screen === 'budget' && (
               <div className="flex flex-col h-full">
                 <div style={{background:'white',padding:'60px 24px 20px',borderBottom:'1px solid #f3f4f6',flexShrink:0}}>
@@ -704,10 +751,7 @@ export default function App() {
                         <div style={{height:10,background:'#f3f4f6',borderRadius:5,overflow:'hidden',marginBottom:8}}>
                           <div style={{height:'100%',borderRadius:5,background:'linear-gradient(90deg,#10b981,#6ee7b7)',width:`${pct}%`}}/>
                         </div>
-                        <div style={{display:'justify-content'}}>
-                          <div style={{fontSize:12,color:'#9ca3af'}}>Faltam {fmt(g.target_amount - g.current_amount)}</div>
-                          {g.deadline && <div style={{fontSize:12,color:'#9ca3af'}}>{new Date(g.deadline+'T00:00:00').toLocaleDateString('pt-BR',{month:'short',year:'numeric'})}</div>}
-                        </div>
+                        <div style={{fontSize:12,color:'#9ca3af'}}>Faltam {fmt(g.target_amount - g.current_amount)}</div>
                       </div>
                     )
                   })}
@@ -752,7 +796,6 @@ export default function App() {
               </div>
             )}
 
-            {/* PROFILE */}
             {screen === 'profile' && (
               <div className="flex flex-col h-full">
                 <div style={{background:'linear-gradient(160deg,#0f172a,#1e3a5f 60%,#065f46)',padding:'54px 24px 32px',flexShrink:0}}>
@@ -829,7 +872,6 @@ export default function App() {
               </div>
             )}
 
-            {/* MODAL */}
             {showModal && (
               <div onClick={e=>{if(e.target===e.currentTarget)setShowModal(false)}} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,display:'flex',alignItems:'flex-end'}}>
                 <div style={{background:'white',width:'100%',borderRadius:'28px 28px 0 0',padding:'0 24px 40px',maxHeight:'85%',overflowY:'auto'}}>
@@ -837,17 +879,11 @@ export default function App() {
                   <div className="font-sora" style={{fontSize:20,fontWeight:700,color:'#111827',marginBottom:24}}>
                     {modalType==='expense'?'Registrar gasto':modalType==='income'?'Registrar receita':modalType==='goal'?'Nova meta':modalType==='rename'?'Renomear transação':'Atualizar salário'}
                   </div>
-
                   {modalType === 'rename' ? (
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nova descrição</div>
-                      <input
-                        value={renameValue}
-                        onChange={e=>setRenameValue(e.target.value)}
-                        placeholder="Ex: Almoço no restaurante"
-                        autoFocus
-                        style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}
-                      />
+                      <input value={renameValue} onChange={e=>setRenameValue(e.target.value)} placeholder="Ex: Almoço no restaurante" autoFocus
+                        style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}/>
                       <button onClick={handleRenameTransaction} disabled={loading||!renameValue.trim()}
                         style={{width:'100%',height:54,background:'linear-gradient(135deg,#6b7280,#4b5563)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!renameValue.trim())?0.5:1}}>
                         {loading?'Salvando...':'Salvar nome'}
@@ -913,7 +949,6 @@ export default function App() {
           </>
         )}
 
-        {/* TOAST */}
         {toast && (
           <div style={{position:'absolute',bottom:100,left:'50%',transform:'translateX(-50%)',background:'#1f2937',color:'white',padding:'12px 20px',borderRadius:20,fontSize:14,fontWeight:600,zIndex:200,whiteSpace:'nowrap'}}>
             {toast}
