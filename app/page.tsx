@@ -149,7 +149,7 @@ export default function App() {
 
   const [toast, setToast] = useState('')
   const [showModal, setShowModal] = useState(false)
-  const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'|'rename'>('expense')
+  const [modalType, setModalType] = useState<'expense'|'income'|'goal'|'salary'|'rename'|'goalDeposit'>('expense')
   const [activeMonth, setActiveMonth] = useState<ActiveMonth>(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
@@ -162,6 +162,9 @@ export default function App() {
   const [extraInput, setExtraInput] = useState('')
   const [renameId, setRenameId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  // Goal deposit state
+  const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null)
+  const [depositAmount, setDepositAmount] = useState('')
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -177,7 +180,15 @@ export default function App() {
     ])
     if (profRes.data) setProfile(profRes.data)
     if (txRes.data) setTransactions(txRes.data)
-    if (catRes.data) setCategories(catRes.data)
+    if (catRes.data) {
+      // Deduplicate by name: prefer user-specific over defaults
+      const byName = new Map<string, Category>()
+      catRes.data.forEach(c => {
+        const existing = byName.get(c.name)
+        if (!existing || (!c.is_default && existing.is_default)) byName.set(c.name, c)
+      })
+      setCategories(Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name)))
+    }
     if (goalRes.data) setGoals(goalRes.data)
   }, [])
 
@@ -191,7 +202,6 @@ export default function App() {
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // ✅ Intercept password recovery — show reset form instead of entering the app
       if (event === 'PASSWORD_RECOVERY') {
         setUser(session?.user ?? null)
         setResetMode(true)
@@ -224,7 +234,6 @@ export default function App() {
         setResetSuccess(false)
         setNewPassword('')
         setConfirmPassword('')
-        // User is already authenticated after password recovery, load their data
         const { data: { session } } = await supabase.auth.getSession()
         if (session?.user) {
           await loadData(session.user.id)
@@ -309,6 +318,27 @@ export default function App() {
     setLoading(false)
   }
 
+  async function handleGoalDeposit() {
+    if (!user || !selectedGoal || !depositAmount) return
+    const amount = parseFloat(depositAmount)
+    if (isNaN(amount) || amount <= 0) return
+    setLoading(true)
+    const newAmount = selectedGoal.current_amount + amount
+    const { error } = await supabase
+      .from('savings_goals')
+      .update({ current_amount: newAmount })
+      .eq('id', selectedGoal.id)
+    if (!error) {
+      await loadData(user.id)
+      setShowModal(false)
+      setDepositAmount('')
+      setSelectedGoal(null)
+      const reached = newAmount >= selectedGoal.target_amount
+      showToast(reached ? '🎉 Meta atingida!' : `✓ R$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} adicionado!`)
+    }
+    setLoading(false)
+  }
+
   async function handleUpdateSalary() {
     if (!user) return; setLoading(true)
     const { error } = await supabase.from('profiles').update({
@@ -348,6 +378,13 @@ export default function App() {
     if (type === 'salary') { setSalaryInput(String(profile?.salary || '')); setExtraInput(String(profile?.extra_income || '')) }
   }
 
+  function openGoalDeposit(goal: SavingsGoal) {
+    setSelectedGoal(goal)
+    setDepositAmount('')
+    setModalType('goalDeposit')
+    setShowModal(true)
+  }
+
   const txnGroups: Record<string, Transaction[]> = {}
   monthTxns.forEach(t => {
     if (!txnGroups[t.date]) txnGroups[t.date] = []
@@ -361,7 +398,7 @@ export default function App() {
     <div className="flex justify-center items-start min-h-screen py-8">
       <div className="phone-shell">
 
-        {/* ===== RESET PASSWORD SCREEN (triggered by PASSWORD_RECOVERY event) ===== */}
+        {/* ===== RESET PASSWORD SCREEN ===== */}
         {resetMode && (
           <div className="flex flex-col h-full" style={{background:'linear-gradient(160deg,#0f172a 0%,#1e3a5f 50%,#064e3b 100%)'}}>
             <div style={{padding:'60px 32px 0',flex:1,display:'flex',flexDirection:'column'}}>
@@ -727,6 +764,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="scroll-content">
+                  {/* ===== METAS DE ECONOMIA ===== */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px 12px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Metas de economia</div>
                     <div onClick={()=>openModal('goal')} style={{fontSize:13,fontWeight:600,color:'#10b981',cursor:'pointer'}}>+ Nova</div>
@@ -739,22 +777,38 @@ export default function App() {
                   )}
                   {goals.map(g => {
                     const pct = Math.min(100, Math.round((g.current_amount / g.target_amount) * 100))
+                    const remaining = g.target_amount - g.current_amount
                     return (
-                      <div key={g.id} style={{margin:'0 24px 14px',background:'white',border:'1.5px solid #e5e7eb',borderRadius:20,padding:18}}>
+                      <div key={g.id}
+                        onClick={() => openGoalDeposit(g)}
+                        style={{margin:'0 24px 14px',background:'white',border:'1.5px solid #e5e7eb',borderRadius:20,padding:18,cursor:'pointer',transition:'box-shadow 0.15s',boxShadow:'0 1px 3px rgba(0,0,0,0.06)'}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}}>
                           <div>
                             <div style={{fontSize:15,fontWeight:700,color:'#1f2937'}}>{g.emoji} {g.name}</div>
                             <div style={{fontSize:12,color:'#9ca3af',marginTop:2}}>{fmt(g.current_amount)} / {fmt(g.target_amount)}</div>
                           </div>
-                          <div className="font-sora" style={{fontSize:18,fontWeight:700,color:'#10b981'}}>{pct}%</div>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <div className="font-sora" style={{fontSize:18,fontWeight:700,color:'#10b981'}}>{pct}%</div>
+                            <div style={{width:32,height:32,borderRadius:10,background:'#f0fdf4',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 5v14M5 12h14"/>
+                              </svg>
+                            </div>
+                          </div>
                         </div>
                         <div style={{height:10,background:'#f3f4f6',borderRadius:5,overflow:'hidden',marginBottom:8}}>
-                          <div style={{height:'100%',borderRadius:5,background:'linear-gradient(90deg,#10b981,#6ee7b7)',width:`${pct}%`}}/>
+                          <div style={{height:'100%',borderRadius:5,background:'linear-gradient(90deg,#10b981,#6ee7b7)',width:`${pct}%`,transition:'width 0.4s ease'}}/>
                         </div>
-                        <div style={{fontSize:12,color:'#9ca3af'}}>Faltam {fmt(g.target_amount - g.current_amount)}</div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <div style={{fontSize:12,color:'#9ca3af'}}>Faltam {fmt(remaining > 0 ? remaining : 0)}</div>
+                          {remaining <= 0 && <div style={{fontSize:12,fontWeight:700,color:'#10b981'}}>🎉 Meta atingida!</div>}
+                          {remaining > 0 && <div style={{fontSize:11,color:'#10b981',fontWeight:600}}>Toque para depositar →</div>}
+                        </div>
                       </div>
                     )
                   })}
+
+                  {/* ===== GASTOS POR CATEGORIA (sem duplicatas) ===== */}
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 24px 12px'}}>
                     <div className="font-sora" style={{fontSize:16,fontWeight:700,color:'#1f2937'}}>Gastos por categoria</div>
                   </div>
@@ -872,14 +926,65 @@ export default function App() {
               </div>
             )}
 
+            {/* ===== MODAL ===== */}
             {showModal && (
               <div onClick={e=>{if(e.target===e.currentTarget)setShowModal(false)}} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,display:'flex',alignItems:'flex-end'}}>
                 <div style={{background:'white',width:'100%',borderRadius:'28px 28px 0 0',padding:'0 24px 40px',maxHeight:'85%',overflowY:'auto'}}>
                   <div style={{width:40,height:4,background:'#e5e7eb',borderRadius:4,margin:'16px auto 24px'}}/>
                   <div className="font-sora" style={{fontSize:20,fontWeight:700,color:'#111827',marginBottom:24}}>
-                    {modalType==='expense'?'Registrar gasto':modalType==='income'?'Registrar receita':modalType==='goal'?'Nova meta':modalType==='rename'?'Renomear transação':'Atualizar salário'}
+                    {modalType==='expense'?'Registrar gasto':modalType==='income'?'Registrar receita':modalType==='goal'?'Nova meta':modalType==='rename'?'Renomear transação':modalType==='goalDeposit'?'Depositar na meta':'Atualizar salário'}
                   </div>
-                  {modalType === 'rename' ? (
+
+                  {/* Goal Deposit Modal */}
+                  {modalType === 'goalDeposit' && selectedGoal && (
+                    <>
+                      {/* Goal summary */}
+                      <div style={{background:'#f0fdf4',border:'1.5px solid #bbf7d0',borderRadius:16,padding:16,marginBottom:24}}>
+                        <div style={{fontSize:16,fontWeight:700,color:'#1f2937',marginBottom:4}}>{selectedGoal.emoji} {selectedGoal.name}</div>
+                        <div style={{fontSize:13,color:'#6b7280',marginBottom:10}}>{fmt(selectedGoal.current_amount)} economizados de {fmt(selectedGoal.target_amount)}</div>
+                        <div style={{height:8,background:'#dcfce7',borderRadius:4,overflow:'hidden'}}>
+                          <div style={{height:'100%',borderRadius:4,background:'linear-gradient(90deg,#10b981,#6ee7b7)',width:`${Math.min(100,Math.round((selectedGoal.current_amount/selectedGoal.target_amount)*100))}%`}}/>
+                        </div>
+                        <div style={{fontSize:12,color:'#059669',fontWeight:600,marginTop:6}}>
+                          Faltam {fmt(Math.max(0, selectedGoal.target_amount - selectedGoal.current_amount))}
+                        </div>
+                      </div>
+
+                      <div style={{textAlign:'center',margin:'0 0 20px'}}>
+                        <span style={{fontFamily:'Sora,sans-serif',fontSize:32,fontWeight:700,color:'#9ca3af'}}>R$</span>
+                        <input
+                          type="number"
+                          value={depositAmount}
+                          onChange={e => setDepositAmount(e.target.value)}
+                          placeholder="0,00"
+                          inputMode="decimal"
+                          autoFocus
+                          style={{fontFamily:'Sora,sans-serif',fontSize:48,fontWeight:700,color:'#111827',border:'none',outline:'none',width:200,textAlign:'center',background:'transparent'}}
+                        />
+                      </div>
+
+                      {/* Quick amounts */}
+                      <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
+                        {[50,100,200,500].map(v => (
+                          <button key={v} onClick={()=>setDepositAmount(String(v))}
+                            style={{flex:1,minWidth:60,height:36,borderRadius:10,border:`1.5px solid ${depositAmount===String(v)?'#10b981':'#e5e7eb'}`,background:depositAmount===String(v)?'#f0fdf4':'white',color:depositAmount===String(v)?'#059669':'#6b7280',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                            R${v}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={handleGoalDeposit}
+                        disabled={loading || !depositAmount || parseFloat(depositAmount) <= 0}
+                        style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer',opacity:(!depositAmount||parseFloat(depositAmount)<=0||loading)?0.5:1}}
+                      >
+                        {loading ? 'Salvando...' : '+ Depositar na meta'}
+                      </button>
+                      <button onClick={()=>setShowModal(false)} style={{width:'100%',height:44,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:500,cursor:'pointer',marginTop:8}}>Cancelar</button>
+                    </>
+                  )}
+
+                  {modalType === 'rename' && (
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nova descrição</div>
                       <input value={renameValue} onChange={e=>setRenameValue(e.target.value)} placeholder="Ex: Almoço no restaurante" autoFocus
@@ -890,7 +995,9 @@ export default function App() {
                       </button>
                       <button onClick={()=>setShowModal(false)} style={{width:'100%',height:44,border:'none',background:'none',color:'#6b7280',fontSize:14,fontWeight:500,cursor:'pointer',marginTop:8}}>Cancelar</button>
                     </>
-                  ) : modalType === 'salary' ? (
+                  )}
+
+                  {modalType === 'salary' && (
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Salário base (R$)</div>
                       <input type="number" value={salaryInput} onChange={e=>setSalaryInput(e.target.value)} placeholder="6500"
@@ -900,7 +1007,9 @@ export default function App() {
                         style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}/>
                       <button onClick={handleUpdateSalary} disabled={loading} style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer'}}>Salvar</button>
                     </>
-                  ) : modalType === 'goal' ? (
+                  )}
+
+                  {modalType === 'goal' && (
                     <>
                       <div style={{fontSize:12,fontWeight:600,color:'#6b7280',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Nome da meta</div>
                       <input value={addTitle} onChange={e=>setAddTitle(e.target.value)} placeholder="Ex: Viagem para Europa"
@@ -910,7 +1019,9 @@ export default function App() {
                         style={{width:'100%',height:52,borderRadius:14,border:'1.5px solid #e5e7eb',padding:'0 16px',fontSize:15,color:'#1f2937',background:'#f9fafb',marginBottom:24,outline:'none'}}/>
                       <button onClick={handleAddGoal} disabled={loading} style={{width:'100%',height:54,background:'linear-gradient(135deg,#10b981,#059669)',border:'none',borderRadius:16,color:'white',fontSize:16,fontWeight:600,cursor:'pointer'}}>Criar meta</button>
                     </>
-                  ) : (
+                  )}
+
+                  {(modalType === 'expense' || modalType === 'income') && (
                     <>
                       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:20}}>
                         {(modalType==='income'?catIncome:catExpense).map(cat => (
