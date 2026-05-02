@@ -1,9 +1,0 @@
-{
-  "name": "FinTrack",
-  "short_name": "FinTrack",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#10b981",
-  "description": "Controle financeiro inteligente para gastos, receitas e metas."
-}
