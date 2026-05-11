@@ -291,7 +291,6 @@ export default function App() {
   const txnGroups: Record<string, Transaction[]> = {};
   monthTxns.forEach(t => { if (!txnGroups[t.date]) txnGroups[t.date] = []; txnGroups[t.date].push(t); });
 
-  // Funções de Crud (Refatoradas para focar no essencial)
   const openModal = (type: typeof modalType, extra?: any) => {
     setModalType(type); setShowModal(true);
     setFormValues({ title: '', amount: '', category: '', date: new Date().toISOString().split('T')[0], salary: String(profile?.salary || ''), extra: String(profile?.extra_income || ''), deposit: '', renameId: extra?.id || '' });
@@ -310,8 +309,10 @@ export default function App() {
   if (screen === 'landing') return <LandingScreen onStart={() => setScreen('login')} />;
 
   return (
-    <div className="flex justify-center items-start min-h-screen py-8 bg-gray-100">
-      <div className="phone-shell relative bg-white shadow-2xl overflow-hidden" style={{ width: 400, height: 800, borderRadius: 40 }}>
+    // Wrapper: padding só em sm+; fundo branco em mobile (sem fundo cinza visível)
+    <div className="flex justify-center items-start min-h-screen sm:py-8 sm:bg-gray-100 bg-white">
+      {/* phone-shell: dimensões e bordas controladas pelo CSS (globals.css) */}
+      <div className="phone-shell relative bg-white overflow-hidden">
         
         {/* TELA DE LOGIN */}
         {screen === 'login' && (
