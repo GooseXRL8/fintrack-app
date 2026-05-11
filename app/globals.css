@@ -26,6 +26,16 @@ body {
   flex-direction: column;
 }
 
+/* Mobile: tela cheia, sem bordas arredondadas */
+@media (max-width: 639px) {
+  .phone-shell {
+    width: 100%;
+    min-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
 .scroll-content {
   flex: 1;
   overflow-y: auto;
